@@ -1,0 +1,535 @@
+                    SMBUS SERIAL EEPROM VIEWER
+
+                         for Linux/Windows
+
+                             SMBVIEW
+
+                          Documentation
+
+                              v1.02
+
+
+
+1. Introduction
+===============
+
+    This tool is designed to access the serial EEPROMs connected to the SMBus / I2C 
+    controller(s) of the chipset or to the SMBus / I2C controller(s) integrated
+    in the CPU. 
+
+    The tool is provided with similiar functionality for the following
+    operating systems:
+
+      OS       Tool Name          Requirements
+      -------  -----------------  ------------------------------------------------
+
+      Windows  SMBVIEW64.exe   The driver "FTSHWAccess" has to installed.
+                                  For Primergy server systems the driver "FscGabi"
+                                  has to be installed.
+
+      Linux    SMBVIEW64       For Primergy server systems the driver "sobgabi"
+                                  has to be installed and started.
+
+    The set of serial EEPROMs available on a systemboard can NOT be determined
+    generically by some standardized scan process. Therefore each systemboard
+    has to be supported by the tool individually.
+    The systemboard is identified by its FTS DNumber 'XXXX'.
+    The Windows tool reads the DNumber from the registry value
+    "HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\BIOS\BaseBoardProduct".
+    The Linux tool read DNumber from "/sys/devices/virtual/dmi/id/board_name".
+    The DNumber can also be set by the enviroment variable "DNUMBER=XXXX".
+    If no DNumber can be determined, no scan is performed.
+    This tool does not support to run on Virtual Machines.
+    If the systemboard is not supported by the tool, the standard I2C addresses
+    A0h-AEh for serial EEPROMs are scanned at all SMBus controller(s)).
+  
+    Several types of EEPROM contents are supported and interpreted: 
+
+         Memory/DIMM Serial Presence Detect Data (SPD) + Temperature Sensor
+         IPMI Field Replaceable Unit Structure (FRU)
+         Extended Display Identification Data (EDID)
+
+    [Note]
+    The following models need to be prepared before running the tool.
+
+    * For RX2530M8/RX2540M8/RX4770M8
+      Please the following methods to set Manufacturing Mode when running this tool.
+       1. "Pc_Ident64 flags.w=manuf"
+       2. reboot
+      Once a memory mark is written, the SPD cannot be read until it is rebooted.
+
+    * For RX1330M6/TX1320M6/TX1330M6
+      Please the following methods to change BIOS setting when running this tool.
+       1. "/opt/deskview/bin/biosset -g 0x325=0x0226"
+       2. reboot
+       (In case of setting default value: "/opt/deskview/bin/biosset -g 0x325=0x0227" and reboot.)
+
+    * For RX1330M5/TX1310M5/TX1320M5/TX1330M5
+      Please the following methods to change BIOS setting when writing BRANDID/Memory Mark.
+       1. "/opt/deskview/bin/biosset -g 0x325=0x0226"
+       2. reboot
+       (In case of setting default value: "/opt/deskview/bin/biosset -g 0x325=0x0227" and reboot.)
+
+
+2. Command Line Parameters
+==========================
+
+    Windows:
+    SMBVIEW64.exe  [-SCD | -XML | -IDP | -INI=<File>]  [-INISECTION=<Section>]
+
+    Linux:
+    ./SMBVIEW64  [-SCD | -XML | -IDP | -INI=<File>]  [-INISECTION=<Section>]
+
+    ?
+
+        Displays a summary of each parameter and how to specify it.
+
+        Example:
+
+            smbview64.exe ?
+            ./smbview64 ?
+
+
+    -SCD / -XML / -IDP
+
+        Creates the files SMBVIEW.SCD and smbview.xml [for Windows version only]
+        which contains the interpreted information of all EEPROM contents
+        (see section 4.).
+        Additionally writes the binary contents of all EEPROMs to the binary files
+        IDPSttii.BIN. 'tt' is the contents type code described in section 3.
+        'ii' is an index number to distinguish different EEPROMs of the same
+        type.
+        Also detailed information is displayed on the console.
+
+        Example:
+
+            smbview64.exe -scd
+            ./smbview64 -scd
+
+
+    -LIST
+
+       Display a list of devices
+
+
+    -INI=<File> 
+  
+        An unattended automatical test is executed. The test is controlled by
+        the commands given in the selected text file <File>.
+        If "=<File>" is missing the default file name smbview.ini is used.
+
+        Each line in the file can contain one command with the format:
+
+            Command = Parameter(s)  ; Comment...
+
+        The character ';' indicates the begin of an optional comment.
+
+        Each command in the file is executed only once and the order of
+        execution is fixed and independent of the order within the file
+        which can be chosen freely.
+
+        All supported commands are described in a template file smbview.ini
+        which is delivered with the tool and this documentation. In this file
+        the commands are shown in the fixed order in which they will be
+        executed if given.
+
+        If every commands is executed successfully the errorlevel 0 is returned.
+        Otherwise a non-zero errorlevel is returned and a detailed error
+        information is appended to the text file error.log (see section 5.).
+
+        Example:
+
+            The file test.ini contains:
+
+                MemChecksum = 1
+
+            Execute the command in test.ini:
+
+                smbview64.exe -ini=test.ini
+                ./smbview64 -ini=test.ini
+
+                if errorlevel 1 goto LError
+
+
+    -INISECTION=<Section>
+
+        This optional parameter can be given in addition to the above parameter
+        -INI. Only the commands of the file <File> following the selected
+        section line "[<Section>]" are executed. <Section> is case sensitive.
+
+        There can be several different sections within the file <File> to
+        hold different test command sets.
+
+        If -INISECTION is not present the commands of the file before the first
+        section line "[..]" (if any at all) are executed.
+
+        Example:
+
+            The file test.ini contains:
+
+                [WriteChassis]
+                  IdpWriteFromFile = 3, 0
+
+                [WritePowerSupply]
+                  IdpWriteFromFile = 2, 0
+
+            Execute the command of section WriteChassis:
+
+                smbview64.exe -ini=test.ini -inisection=WriteChassis
+                ./smbview64 -ini=test.ini -inisection=WriteChassis
+
+                if errorlevel 1 goto LError
+
+            Execute the command of section WritePowerSupply:
+
+                smbview64.exe -ini=test.ini -inisection=WritePowerSupply
+                ./smbview64 -ini=test.ini -inisection=WritePowerSupply
+
+                if errorlevel 1 goto LError
+
+
+    -CHECKREF=<F1>, <F2>,…
+
+        Checks SPD data of every memory module to match one of
+        the given alternative reference files <Fx> (max. 10).
+        If -CHECKSLOT is set, only the given slots are checked.
+        <Fx> contains the 512 byte SPD-IdProm contents. 
+
+        Example:
+
+            Check the data in spd.txt:
+
+            smbview64.exe -CHECKREF=spd.txt
+            ./smbview64 -CHECKREF=spd.txt
+
+
+    -CHECKREFMS=<F>
+
+        As -CHECKREF but reads the alternative reference file names line by line from given file.
+
+        Example:
+
+            spd_list.txt contains "spd1.txt spd2.txt".
+            Checks SPD data of every memory module to match "spd1.txt" and "spd2.txt".
+
+            smbview64.exe -CHECKREFMS=spd_list.txt
+            ./smbview64 -CHECKREFMS=spd_list.txt
+
+
+    -CHECKSLOT=<S1>, <S2>, …
+
+        Checks that in each given slot <Sx> a memory module is present.
+
+        Example:
+
+            smbview64.exe -CHECKSLOT="1A N0.C0.D0","B2 N0.C1.D0","2A N0.C0.D1"
+            ./smbview64 -CHECKSLOT="1A N0.C0.D0","B2 N0.C1.D0","2A N0.C0.D1"
+
+
+
+3. EEPROM Contents TypeCodes
+============================
+
+    Type  EEPROM Location   Contents Type
+    Code
+    ----  ----------------  -------------
+
+     00   DIMM              SPD
+     02   PowerSupply       FRU
+     03   Chassis           FRU
+     05   MemoryBoard       FRU
+     10   HardiskBackplane  FRU
+     12   Baseboard         FRU
+     11   OCP               FRU
+     13   CPUBoard          FRU
+     14   IOBoard           FRU
+     16   Monitor           EDID
+     15   Unknown           -
+     01   PCICard           FRU
+
+
+
+4. Format of SMBVIEW.SCD
+========================
+
+    [SMBMEMORY]
+      ProgramVersion=x.xx
+  
+      TotalMemorySize=<decimal>MB
+      TotalMemorySizeInMB=<decimal>
+      TotalDataConfiguration=None | Parity | ECC
+      TotalMinMaxFrequencyInMHz=<decimal>,<decimal>
+      TotalDeviceWidth=<decimal>
+      TotalMemoryMark=Unknown | Present_and_OK | Present_but_INVALID | Not_present
+      NumberOfSockets=<decimal>
+  
+      AddressTypeStatus.i=<hexadecimal>,Memory,OK | TIMEOUT | DEVERR | BUSERR | FAILED | EC_TIMEOUT
+      Socket.i=<SocketDesignation>
+        MemoryType.i=FPM | EDO | SDRAM | DDR_SDRAM | DDR2_SDRAM | RAMBUS | RAMBUS_SO | FBD_DDR2 | DDR3_SDRAM | DDR4 | NVM
+        MemorySize.i=<decimal>MB
+        SPDRevision.i=<decimal>.<decimal>
+        NumberOfRanks.i=<decimal>
+        DataConfiguration.i=None | Parity | ECC
+        JEDECIDManufacturer.i="<ManufacturerName>"
+        ModuleProductIdentifier.i=0x<hex>
+        ManufacturingLocation.i=0x<hexadecimal>
+        PartNumber.i="<ModulePartNumber"
+        RevisionCode.i=0x<hexadecimal>
+        ManufacturingDate.i=<Year>,<Week>
+        SerialNumber.i=0x<hexadecimal>
+        ModuleType.i=RDIMM | UDIMM | SO-DIMM
+        ModuleHeigth.i=<dec> - <dec> mm
+        ModuleThickness.i=<dec> - <dec> mm
+        ReferenceRawCardUsed.i=0x<hex>
+        Frequency.i=<decimal>MHz DDR<Frequency>
+        DeviceTechnology.i=<device_size>k/Mx<width>/<width>x<row_mas>x<col_mas>x<bank_mas>
+        DeviceManufacturer.i="<ManufacturerName>"
+        DRAMStepping.i=0x<hexadecimal>
+        RegisterManufacturer.i="<ManufacturerName>"
+        RegisterRevisionNumber.i=0x<hexadecimal>
+        DataBufferRevisionNumber.i=0x<hexadecimal>
+        AddressCommandParity.i=NO | YES
+        TCaseMax.i=<decimal>
+        MemorySubsystemControllerManufacturer.i="<ManufacturerName>"
+        MemorySubsystemControllerIdentifier.i=0x<hex>
+        Checksum.i=Ok | Invalid,0x<hex>
+        ChecksumModuleSpecific.i=Ok | Invalid,0x<hex>
+        TemperatureSensorManufacturerID.i=0x<hexadecimal>
+        TemperatureSensorDeviceID.i=0x<hexadecimal>
+        TemperatureSensorRevision.i=0x<hexadecimal>
+        TemperatureSensorReading.i=<decimal> 
+        MemoryMark.i=Unknown | Present_and_OK | Present_but_INVALID | Not_present,YYYY-MM-TT HH:MM:SS
+        ScreeningCounter.i="Unknown | >=7 | <decimal>"
+        TYPCONTROLMEM="<size>"
+  
+        (i = 0, ..., NumberOfSockets-1)
+  
+  
+    [EDID]
+      IDManufacturerName                      = FUS
+      IDProductCode                           = 0x081A
+      IDSerialNumber                          = 0x00003B21
+      WeekYearOfManufacture                   = 26/2013
+      EDIDVersion.RevisionNumber              = 1.4
+      VideoSignalInterface                    = Digital | Analog
+      DigitalVideoInterfaceStandardSupported  = Not defined |
+                                                DVI         |
+                                                HDMI-a      |
+                                                HDMI-b      |
+                                                MDDI        |
+                                                DisplayPort
+      ColorBitDepth                           = Undefined                 |
+                                                6 Bits per Primary Color  |
+                                                8 Bits per Primary Color  |
+                                                10 Bits per Primary Color |
+                                                12 Bits per Primary Color |
+                                                14 Bits per Primary Color |
+                                                16 Bits per Primary Color
+      SignalLevelStandard                     = 0.700 : 0.300 : 1.000 V p-p |
+                                                0.714 : 0.286 : 1.000 V p-p |
+                                                1.000 : 0.400 : 1.400 V p-p |
+                                                0.700 : 0.000 : 0.700 V p-p
+      ScreenSize                              = 51 cm x 29 cm | Unknown
+      DiagonalScreenSize                      = 23.1 inch | Unknown
+      AspectRatio                             = x:y | Unknown
+      Gamma                                   = 2.20
+      FeatureSupport                          = Non-ContinuousFrequency | ContinuousFrequency
+                                                [+ sRGBStandardDefaultColorSpace]
+                                                [+ ActiveOff]
+                                                [+ Suspend]
+                                                [+ Standby]
+      DisplayType                             = Monochrome/Grayscale                  |
+                                                RGBColor                              |
+                                                NonRGBMulticolor                      |
+                                                Undefined                             |
+                                                RGB 4:4:4                             |
+                                                RGB 4:4:4 + YCrCb 4:4:4               |
+                                                RGB 4:4:4 + YCrCb 4:2:2               |
+                                                RGB 4:4:4 + YCrCb 4:4:4 + YCrCb 4:2:2
+      ChromaticityRedxy                       = 0.636,0.334
+      ChromaticityGreenxy                     = 0.309,0.623
+      ChromaticityBluexy                      = 0.150,0.067
+      WhitePointxy                            = 0.313,0.329
+      EstablishedTiming.1-24                  = 800 x 600 60Hz
+      StandardTiming.1-4                      = 1920 x 1080 60Hz, 16:10 AR | 4:3 AR | 5:4 AR | 16:9 AR
+      Descriptor.1                            = DetailedTiming
+        PixelClock.1                          = 148MHz
+        HorizontalAddressableVideo.1          = 1920 Pixels
+        HorizontalBlanking.1                  = 280 Pixels
+        VerticalAddressableVideo.1            = 1080 Lines
+        VerticalBlanking.1                    = 45 Lines
+        HorizontalFrontPorch.1                = 88 Pixels
+        HorizontalSyncPulseWidth.1            = 44 Pixels
+        VerticalFrontPorch.1                  = 4 Line
+        VerticalSyncPulseWidth.1              = 5 Lines
+        HorizontalAddressableVideoImageSize.1 = 509 mm
+        VerticalAddressableVideoImageSize.1   = 286 mm
+        DiagonalAddressableVideoImageSize.1   = 23.0 inch
+        HorizontalBorder.1                    = 0 Pixels
+        VerticalBorder.1                      = 0 Lines
+        SignalInterfaceType.1                 = Interlaced | Non-Interlaced
+        StereoViewingSupport.1                = Normal Display                                      |
+                                                Field sequential stereo, right image                |
+                                                Field sequential stereo, left image                 |
+                                                2-way interleaved stereo, right image on even lines |
+                                                2-way interleaved stereo, left image on even lines  |
+                                                4-way interleaved stereo                            |
+                                                Side-by-Side interleaved stereo
+        SyncSignalDefinitions.1               = Analog Composite Sync | Bipolar Analog Composite Sync | Digital Composite Sync | Digital Separate Sync
+                                                + Without Serrations | With Serrations | Vertical Sync Negative | Vertical Sync Positive
+                                                + Sync On Green | Sync On RGB | Horizontal Sync Negative | Horizontal Sync Positive
+      Descriptor.2-4                          = Display
+        Tag.2-4                               = 0xFF,Display Product Serial Number
+        DisplayProductSerialNumber.2-4        = "YV6N015137"
+      Descriptor.2-4                          = Display
+        Tag.2-4                               = 0xFE,Alphanumeric Data String
+        String.2-4                            = "..."
+      Descriptor.2-4                          = Display
+        Tag.2-4                               = 0xFD,Display Range Limits
+        MinimumVerticalRate.2-4               = 49 Hz
+        MaximumVerticalRate.2-4               = 76 Hz
+        MinimumHorizontalRate.2-4             = 15 kHz
+        MaximumHorizontalRate.2-4             = 82 kHz
+        MaximumPixelClock.2-4                 = 170 MHz
+        VideoTimingSupport.2-4                = 0x00,Default GTF supported   |
+                                                     Range Limits Only       |
+                                                     Secondary GTF supported |
+                                                     CVT supported
+        Byte11_17.2-4                         = 0x0A,0x20,0x20,0x20,0x20,0x20,0x20
+      Descriptor.2-4                          = Display
+        Tag.2-4                               = 0xFC,Display Product Name
+        DisplayProductName.2-4                = "P23T-6 LED"
+      Descriptor.2-4                          = Display
+        Tag.2-4                               = 0xFB,Color Point Data
+      Descriptor.2-4                          = Display
+        Tag.2-4                               = 0xFA,Standard Timing Identifications
+        StandardTiming.9-12                   = 1920 x 1080 60Hz, 16:10 AR | 4:3 AR | 5:4 AR | 16:9 AR
+        LineFeed.2-4                          = 0x0A
+      Descriptor.2-4                          = Display
+        Tag.2-4                               = 0xF9,Display Color Management (DCM) Data
+        VersionNumber.2-4                     = 0x00
+        Red_a3.2-4                            = 0
+        Red_a2.2-4                            = 0
+        Green_a3.2-4                          = 0
+        Green_a2.2-4                          = 0
+        Blue_a3.2-4                           = 0
+        Blue_a2.2-4                           = 0
+      Descriptor.2-4                          = Display
+        Tag.2-4                               = 0xF8,CVT 3 Byte Timing Codes
+      Descriptor.2-4                          = Display
+        Tag.2-4                               = 0xF7,Established Timings
+        RevisionNumber.2-4                    = 0x00
+        EstablishedTiming.24-71               = 1280 x 1024 85Hz
+      Descriptor.2-4                          = Display
+        Tag.2-4                               = 0x10,Dummy Descriptor
+        Byte4_17.2-4                          = 0x00,...,0x00
+      ExtensionBlockCount                     = 0x00 | 0x01
+      Checksum                                = 0xCD,0xCD
+      TYPCONTROLLCD                           = "1ab31a08"
+
+
+    [PowerSupply0] / [Chassis] / [SystemBoard0] / [IOModule0] / [PCICard1]
+
+      ; InternalUseArea
+          InternalUseArea=
+          InternalUseAreaStr=
+
+      ; ChassisInfoArea
+          ChassisType=
+          ChassisPartNumber=
+          ChassisSerialNumber=
+          ChassisCustomInfoField0=
+          ...
+          ChassisCustomInfoField12=
+
+      ; BoardInfoArea
+          ManufacturingDateTime=
+          BoardManufacturer=
+          BoardProductName=
+          BoardSerialNumber=
+          BoardPartNumber=
+          BoardFRUFileId=
+          BoardCustomInfoField0=
+          ...
+          BoardCustomInfoField9=
+
+      ; ProductInfoArea
+          ManufacturerName=
+          ProductName=
+          ProductPartModelNumber=
+          ProductVersion=
+          ProductSerialNumber=
+          AssetTag=
+          ProductFRUFileId=
+          ProductCustomInfoField0=
+          ...
+          ProductCustomInfoField7=
+
+      ; RecordArea
+          Record1=
+          ...
+          Record12=
+
+          TYPCONTROLPSU="..."                in section [PowerSupply0] only
+          TYPCONTROLIOMOD="..."              in section [IOModule0] only (OCP)
+
+
+
+5. Format of ERROR.LOG Entry
+============================
+
+    If started with the command line parameter "-INI" (see chapter 2.) a
+    failing command appends an entry with the following format to the file
+    ERROR.LOG:
+
+        [SMBVIEW]
+          Version=Vx.xx
+          CmdLine=<CommandLine>
+          TimeStamp=2012-01-10 08:00:00
+          Error=<DetailedErrorMessage>
+
+
+
+6. Errorlevel
+=============
+
+      0 = 0x00  Ok
+      1 = 0x01  Read INI file failed
+      2 = 0x02  INI-MemMark: Create FRU data failed
+      3 = 0x03  INI-MemMark: Write IdProm failed
+      4 = 0x04  INI-MemMark: Tool timelimit exceeded
+      5 = 0x05  INI-MemMark: No Device present
+      6 = 0x06  INI-MemMark: Fatal (Vendor SPD data unknown)
+     10 = 0x0A  INI-IdpChassis: IdProm not present
+     11 = 0x0B  INI-IdpPowerSupply 0: IdProm not present
+     12 = 0x0C  INI-IdpPowerSupply 1: IdProm not present
+     13 = 0x0D  INI-IdpBaseBoard: IdProm not present
+     20 = 0x14  INI-IdpChassis: FRU contents corrupt
+     21 = 0x15  INI-IdpPowerSupply 0: FRU contents corrupt
+     22 = 0x16  INI-IdpPowerSupply 1: FRU contents corrupt
+     23 = 0x17  INI-IdpBaseBoard: FRU contents corrupt
+     30 = 0x1E  INI-IdpSaveToFile: IdProm not found
+     31 = 0x1F  INI-IdpSaveToFile: IdProm not present
+     32 = 0x20  INI-IdpSaveToFile: Open idp.bin failed
+     33 = 0x21  INI-MemChecksum: Failed
+     34 = 0x22  INI-MemFrequency: Failed
+     40 = 0x28  CHECKREF: Too many files in command line parm
+     41 = 0x29  CHECKREFMS: Read reference file MS file failed
+     42 = 0x2A  CHECKREF: Read reference file failed
+     43 = 0x2B  CHECKSLOT: Too many slots in command line parm
+     50 = 0x32  CHECKDATE: Open expiration file failed
+     51 = 0x33  CHECKDATE: Invalid expiration file format
+     60 = 0x3C  SPDWriteDisable: SPDWriteDisable is TRUE. Please set FALSE
+     61 = 0x3D  Manufacturing mode is FALSE. Please set Manufacturing mode
+     70 = 0x46  Fail to read SPD on BIOS
+     71 = 0x47  Fail to write SPD on BIOS
+     72 = 0x48  Fail to read and write SPD on BIOS
+     73 = 0x49  Reading is blocked. Please reboot after writing SPD
+     80 = 0x50  INI-IdpWriteFromFile: IdProm not found
+     81 = 0x51  INI-IdpWriteFromFile: IdProm not present
+     82 = 0x52  INI-IdpWriteFromFile: Open idp.bin failed
+     83 = 0x53  INI-IdpWriteFromFile: Write IdProm failed
+     84 = 0x54  DNumber missing
+    100 = 0x64  GABI driver missing
+    101 = 0x65  DNumber missing
+    255 = 0xFF  Failed
